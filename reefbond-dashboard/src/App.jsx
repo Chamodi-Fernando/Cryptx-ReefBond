@@ -42,12 +42,7 @@ export default function App() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Auto-refresh every 30 seconds
-  useEffect(() => {
-    if (!isLive) return;
-    const interval = setInterval(loadData, 30000);
-    return () => clearInterval(interval);
-  }, [loadData, isLive]);
+  
 
   // Change site prediction
   const handleSiteChange = async (siteName) => {

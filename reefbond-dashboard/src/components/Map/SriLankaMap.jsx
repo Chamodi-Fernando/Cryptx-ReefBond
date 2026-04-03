@@ -86,7 +86,7 @@ export default function SriLankaMap({ selectedSite, onSelectSite, stats }) {
 
       markersRef.current.push(marker);
     });
-  }, [selectedSite, stats, onSelectSite]);
+  }, [selectedSite, stats, ]);
 
   // Fly to selected site
   useEffect(() => {
