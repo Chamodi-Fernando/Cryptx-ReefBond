@@ -66,8 +66,10 @@ export async function recordPayout(location, dhwValue = 8.23) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ location, dhw_value: dhwValue, sst_value: 30.32, risk_percent: 99 })
     });
-    if (!res.ok) throw new Error(res.statusText);
-    return { data: await res.json(), ok: true };
+
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) return { data: payload, ok: false };
+    return { data: payload, ok: true };
   } catch { return { data: null, ok: false }; }
 }
 

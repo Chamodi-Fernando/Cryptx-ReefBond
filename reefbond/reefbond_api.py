@@ -31,6 +31,22 @@ def init_db():
         location TEXT NOT NULL, dhw_value REAL, sst_value REAL, risk_percent REAL,
         payout_amount REAL, tx_hash TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (operator_id) REFERENCES operators(id))''')
+
+    # Backfill missing columns for older DB files created before schema updates.
+    def ensure_column(table, column, definition):
+        cols = [row[1] for row in c.execute(f"PRAGMA table_info({table})").fetchall()]
+        if column not in cols:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+    ensure_column('operators', 'wallet_address', "TEXT DEFAULT ''")
+    ensure_column('operators', 'premium_paid', 'REAL DEFAULT 0.01')
+    ensure_column('operators', 'total_payouts', 'REAL DEFAULT 0')
+    ensure_column('operators', 'is_active', 'INTEGER DEFAULT 1')
+
+    ensure_column('payout_events', 'operator_name', 'TEXT')
+    ensure_column('payout_events', 'sst_value', 'REAL')
+    ensure_column('payout_events', 'risk_percent', 'REAL')
+
     conn.commit()
     conn.close()
 
@@ -94,9 +110,13 @@ explainer = shap.TreeExplainer(model)
 
 REGION_MAP = {"hikkaduwa":"Southern Sri Lanka","mirissa":"Southern Sri Lanka","unawatuna":"Southern Sri Lanka","galle":"Southern Sri Lanka","weligama":"Southern Sri Lanka","southern":"Southern Sri Lanka","trincomalee":"Eastern Sri Lanka","pigeon_island":"Eastern Sri Lanka","nilaveli":"Eastern Sri Lanka","batticaloa":"Eastern Sri Lanka","eastern":"Eastern Sri Lanka"}
 REGION_COORDS = {"Southern Sri Lanka":{"lat":6.1,"lng":80.1,"sites":["Hikkaduwa","Mirissa","Unawatuna","Galle","Weligama"]},"Eastern Sri Lanka":{"lat":8.57,"lng":81.23,"sites":["Trincomalee","Pigeon Island","Nilaveli","Batticaloa"]}}
+REGISTRATION_PREMIUM_ETH = 0.01
+
+def normalize_location_key(location: str) -> str:
+    return location.strip().lower().replace("-", "_").replace(" ", "_")
 
 def resolve_region(location):
-    loc = location.lower().replace(" ", "_")
+    loc = normalize_location_key(location)
     if loc in REGION_MAP: return REGION_MAP[loc]
     raise HTTPException(status_code=404, detail=f"Location '{location}' not found")
 
@@ -209,10 +229,23 @@ def get_timeline(location: str, days: int = 90):
 
 @app.post("/operators/register", tags=["Operators"])
 def register_operator(op: OperatorCreate):
+    normalized_location = normalize_location_key(op.location)
+    if normalized_location not in REGION_MAP:
+        raise HTTPException(status_code=400, detail=f"Unsupported location '{op.location}'")
+
     conn = get_db(); c = conn.cursor()
-    c.execute("INSERT INTO operators (name,location,wallet_address) VALUES (?,?,?)", (op.name,op.location,op.wallet_address))
+    c.execute(
+        "INSERT INTO operators (name,location,wallet_address,premium_paid) VALUES (?,?,?,?)",
+        (op.name, normalized_location, op.wallet_address, REGISTRATION_PREMIUM_ETH)
+    )
     conn.commit(); op_id = c.lastrowid; conn.close()
-    return {"id":op_id,"name":op.name,"location":op.location,"status":"registered"}
+    return {
+        "id": op_id,
+        "name": op.name,
+        "location": normalized_location,
+        "premium_paid": REGISTRATION_PREMIUM_ETH,
+        "status": "registered"
+    }
 
 @app.get("/operators", tags=["Operators"])
 def get_all_operators():
@@ -234,18 +267,27 @@ def delete_operator(op_id: int):
 
 @app.post("/operators/payout", tags=["Operators"])
 def record_payout(event: PayoutRequest):
+    normalized_location = normalize_location_key(event.location)
+
     conn = get_db(); c = conn.cursor()
-    ops = c.execute("SELECT * FROM operators WHERE location=? AND is_active=1",(event.location,)).fetchall()
-    if not ops: conn.close(); raise HTTPException(status_code=404, detail=f"No operators at {event.location}")
+    ops = c.execute(
+        """
+        SELECT * FROM operators
+        WHERE REPLACE(REPLACE(LOWER(TRIM(location)), ' ', '_'), '-', '_')=?
+          AND is_active=1
+        """,
+        (normalized_location,)
+    ).fetchall()
+    if not ops: conn.close(); raise HTTPException(status_code=404, detail=f"No operators at {normalized_location}")
     paid = []
     for op in ops:
         tx = "0x"+hashlib.sha256(f"{op['id']}-{datetime.now().isoformat()}".encode()).hexdigest()[:64]
         c.execute("INSERT INTO payout_events (operator_id,operator_name,location,dhw_value,sst_value,risk_percent,payout_amount,tx_hash) VALUES (?,?,?,?,?,?,?,?)",
-            (op['id'],op['name'],event.location,event.dhw_value,event.sst_value,event.risk_percent,0.05,tx))
+            (op['id'],op['name'],normalized_location,event.dhw_value,event.sst_value,event.risk_percent,0.05,tx))
         c.execute("UPDATE operators SET total_payouts=total_payouts+0.05 WHERE id=?",(op['id'],))
         paid.append({"id":op['id'],"name":op['name'],"payout":0.05,"tx_hash":tx})
     conn.commit(); conn.close()
-    return {"location":event.location,"operators_paid":len(paid),"details":paid}
+    return {"location":normalized_location,"operators_paid":len(paid),"details":paid}
 
 @app.get("/operators/events/all", tags=["Operators"])
 def get_all_events():
