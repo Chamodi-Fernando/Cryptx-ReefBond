@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LuSatellite, LuBrain, LuLink, LuCoins, LuZap, LuClipboardList, LuCircleCheck, LuMapPin, LuX } from 'react-icons/lu';
+import { LuSatellite, LuBrain, LuLink, LuCoins, LuZap, LuClipboardList, LuCircleCheck, LuMapPin } from 'react-icons/lu';
 import { FaMask } from 'react-icons/fa';
 import { cardStyle, fonts } from '../../styles/theme';
 import { getOperators, registerOperator, deleteOperator, recordPayout, getPayoutEvents } from '../../services/api';
@@ -36,7 +36,8 @@ export default function ContractTab() {
     setLoading(true); setMsg('');
     const res = await registerOperator(name, location, wallet);
     if (res.ok) {
-      setMsg(`Registered: ${name} at ${location}`);
+      const charged = Number(res?.data?.premium_paid ?? 0).toFixed(3);
+      setMsg(`Registered: ${name} at ${location}. Premium charged: ${charged} ETH`);
       setName(''); setWallet('');
       loadData();
     } else { setMsg('Registration failed!'); }
@@ -55,7 +56,10 @@ export default function ContractTab() {
     if (res.ok) {
       setMsg(`Payout triggered at ${payoutLoc}! ${res.data.operators_paid} operator(s) paid.`);
       loadData();
-    } else { setMsg('Payout failed — no operators at this location?'); }
+    } else {
+      const detail = res?.data?.detail ? ` (${res.data.detail})` : '';
+      setMsg(`Payout failed — no operators at this location?${detail}`);
+    }
     setLoading(false);
   };
 
@@ -164,16 +168,17 @@ export default function ContractTab() {
               </div>
               <div>
                 <div style={{ fontSize: 10, color: '#64748b' }}>Premium</div>
-                <div style={{ color: '#f59e0b', fontWeight: 600 }}>{op.premium_paid} ETH</div>
+                <div style={{ color: '#f59e0b', fontWeight: 600 }}>{Number(op.premium_paid || 0).toFixed(3)} ETH</div>
               </div>
               <div>
                 <div style={{ fontSize: 10, color: '#64748b' }}>Payouts</div>
                 <div style={{ color: '#10b981', fontWeight: 600 }}>{op.total_payouts.toFixed(2)} ETH</div>
               </div>
               <button onClick={() => handleDelete(op.id, op.name)} style={{
-                padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.3)',
+                padding: '6px 10px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.3)',
                 background: 'rgba(239,68,68,0.1)', color: '#ef4444', fontSize: 10, cursor: 'pointer',
-              }}><LuX size={12} /></button>
+                fontWeight: 700, minWidth: 62,
+              }}>Delete</button>
             </div>
           ))}
         </div>

@@ -101,17 +101,6 @@ export default function SriLankaMap({ selectedSite, onSelectSite, stats }) {
     <div>
       <div ref={mapRef} style={{ height: 360, borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)' }} />
 
-      {/* Legend */}
-      <div style={{
-        display: 'flex', gap: 14, padding: '10px 12px', justifyContent: 'center',
-      }}>
-        {[['#ef4444', 'High Risk'], ['#f59e0b', 'Medium'], ['#10b981', 'Safe']].map(([c, l]) => (
-          <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: '#94a3b8' }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: c }} />{l}
-          </div>
-        ))}
-      </div>
-
       <style>{`
         .reef-tooltip-custom {
           background: #1e293b !important;
