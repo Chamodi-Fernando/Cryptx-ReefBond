@@ -1,0 +1,17 @@
+€•µ      ]”(ŒSST_90th”Œ	SSTA_90th”Œ HotSpot”ŒDHW”Œ
+SST_mean_7d”Œ
+SST_max_7d”Œ
+SST_std_7d”ŒSSTA_mean_7d”Œ
+DHW_max_7d”ŒHotSpot_mean_7d”ŒSST_mean_14d”Œ
+SST_max_14d”Œ
+SST_std_14d”Œ
+SSTA_mean_14d”Œ
+DHW_max_14d”ŒHotSpot_mean_14d”ŒSST_mean_30d”Œ
+SST_max_30d”Œ
+SST_std_30d”Œ
+SSTA_mean_30d”Œ
+DHW_max_30d”ŒHotSpot_mean_30d”Œ
+SST_change_7d”Œ
+DHW_change_7d”ŒSSTA_change_7d”Œ	month_sin”Œ	month_cos”Œ
+day_of_year”ŒSST_above_threshold”Œ
+region_code”e.
