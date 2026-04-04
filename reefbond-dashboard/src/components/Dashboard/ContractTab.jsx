@@ -1,178 +1,208 @@
 import React, { useState, useEffect } from 'react';
-import { LuSatellite, LuBrain, LuLink, LuCoins, LuLandmark, LuBanknote, LuWaves, LuClipboardList, LuCircleCheck, LuZap, LuLoader } from 'react-icons/lu';
+import { LuSatellite, LuBrain, LuLink, LuCoins, LuZap, LuClipboardList, LuCircleCheck, LuMapPin, LuX } from 'react-icons/lu';
 import { FaMask } from 'react-icons/fa';
 import { cardStyle, fonts } from '../../styles/theme';
+import { getOperators, registerOperator, deleteOperator, recordPayout, getPayoutEvents } from '../../services/api';
+
+const LOCATIONS = ['hikkaduwa', 'mirissa', 'unawatuna', 'galle', 'weligama', 'trincomalee', 'pigeon_island', 'nilaveli', 'batticaloa'];
 
 const FLOW_STEPS = [
-  { title: 'NOAA Satellite', desc: 'SST data collected', icon: <LuSatellite size={28} />, color: '#38bdf8' },
-  { title: 'AI Prediction',  desc: 'XGBoost + SHAP',    icon: <LuBrain size={28} />, color: '#8b5cf6' },
-  { title: 'Oracle Push',    desc: 'DHW → On-chain',     icon: <LuLink size={28} />, color: '#f59e0b' },
-  { title: 'Auto Payout',    desc: 'No claim needed!',   icon: <LuCoins size={28} />, color: '#10b981' },
+  { title: 'NOAA Satellite', desc: 'SST data collected', icon: <LuSatellite size={24} />, color: '#38bdf8' },
+  { title: 'AI Prediction', desc: 'XGBoost + SHAP', icon: <LuBrain size={24} />, color: '#8b5cf6' },
+  { title: 'Oracle Push', desc: 'DHW → On-chain', icon: <LuLink size={24} />, color: '#f59e0b' },
+  { title: 'Auto Payout', desc: 'No claim needed!', icon: <LuCoins size={24} />, color: '#10b981' },
 ];
 
-const LOCATIONS = ['hikkaduwa', 'trincomalee', 'mirissa', 'pigeon_island', 'batticaloa'];
-
 export default function ContractTab() {
-  const [poolStats, setPoolStats] = useState(null);
+  const [operators, setOperators] = useState([]);
   const [events, setEvents] = useState([]);
-  const [triggerLocation, setTriggerLocation] = useState('hikkaduwa');
-  const [triggering, setTriggering] = useState(false);
+  const [name, setName] = useState('');
+  const [location, setLocation] = useState('hikkaduwa');
+  const [wallet, setWallet] = useState('');
+  const [payoutLoc, setPayoutLoc] = useState('hikkaduwa');
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState('');
 
-  // Load stats + any stored events
-  useEffect(() => {
-    fetch('http://localhost:8000/stats')
-      .then(res => res.json())
-      .then(data => {
-        setPoolStats({
-          poolBalance: `${(0.1 + events.length * 0.01).toFixed(2)} ETH`,
-          totalPayouts: `${(events.length * 0.05).toFixed(2)} ETH`,
-          totalOperators: data.monitored_regions || 2,
-          totalEvents: events.length,
-          premiumsCollected: `${(events.length * 0.01 + 0.01).toFixed(2)} ETH`,
-          modelAccuracy: data.model_accuracy || '89.87%',
-        });
-      })
-      .catch(() => {});
-  }, [events]);
-
-  // Trigger oracle from dashboard
-  const handleTrigger = async () => {
-    setTriggering(true);
-    try {
-      const res = await fetch(`http://localhost:8000/oracle/trigger?location=${triggerLocation}`, { method: 'POST' });
-      const data = await res.json();
-
-      const predRes = await fetch(`http://localhost:8000/predict/${triggerLocation}`);
-      const pred = await predRes.json();
-
-      const newEvent = {
-        operator: triggerLocation.charAt(0).toUpperCase() + triggerLocation.slice(1) + ' Dive Center',
-        location: triggerLocation.charAt(0).toUpperCase() + triggerLocation.slice(1),
-        dhw: data.dhw_value || 8.23,
-        sst: data.sst || pred.sst || 30.32,
-        risk: data.risk_percent || pred.bleaching_risk_percent || 99,
-        payout: '0.05 ETH',
-        txHash: data.tx_hash || '0x' + Math.random().toString(16).slice(2, 14) + '...',
-        timestamp: new Date().toLocaleTimeString(),
-        shouldPayout: data.should_payout,
-      };
-      setEvents(prev => [newEvent, ...prev]);
-    } catch (err) {
-      console.error(err);
-    }
-    setTriggering(false);
+  const loadData = async () => {
+    const [opsRes, evtsRes] = await Promise.all([getOperators(), getPayoutEvents()]);
+    if (opsRes.ok) setOperators(opsRes.data);
+    if (evtsRes.ok) setEvents(evtsRes.data);
   };
+
+  useEffect(() => { loadData(); }, []);
+
+  const handleRegister = async () => {
+    if (!name) { setMsg('Enter operator name!'); return; }
+    setLoading(true); setMsg('');
+    const res = await registerOperator(name, location, wallet);
+    if (res.ok) {
+      setMsg(`Registered: ${name} at ${location}`);
+      setName(''); setWallet('');
+      loadData();
+    } else { setMsg('Registration failed!'); }
+    setLoading(false);
+  };
+
+  const handleDelete = async (id, opName) => {
+    if (!window.confirm(`Delete ${opName}?`)) return;
+    await deleteOperator(id);
+    loadData();
+  };
+
+  const handlePayout = async () => {
+    setLoading(true); setMsg('');
+    const res = await recordPayout(payoutLoc);
+    if (res.ok) {
+      setMsg(`Payout triggered at ${payoutLoc}! ${res.data.operators_paid} operator(s) paid.`);
+      loadData();
+    } else { setMsg('Payout failed — no operators at this location?'); }
+    setLoading(false);
+  };
+
+  const inputStyle = {
+    padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)',
+    background: 'rgba(255,255,255,0.05)', color: '#e2e8f0', fontSize: 13,
+    fontFamily: fonts.body, outline: 'none', width: '100%',
+  };
+
+  const btnStyle = (color) => ({
+    padding: '10px 20px', borderRadius: 8, border: 'none', cursor: 'pointer',
+    background: color, color: '#fff', fontSize: 13, fontWeight: 700,
+    fontFamily: fonts.body, opacity: loading ? 0.6 : 1, whiteSpace: 'nowrap',
+  });
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
 
-      {/* Pool stats */}
-      <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10 }}>
-        {[
-          { label: 'Pool Balance',   value: poolStats?.poolBalance || '0.15 ETH',       icon: <LuLandmark size={22} color="#38bdf8" /> },
-          { label: 'Total Payouts',  value: poolStats?.totalPayouts || '0.05 ETH',      icon: <LuBanknote size={22} color="#38bdf8" /> },
-          { label: 'Operators',      value: poolStats?.totalOperators || 2,              icon: <FaMask size={22} color="#38bdf8" /> },
-          { label: 'Events',         value: events.length || 1,                          icon: <LuWaves size={22} color="#38bdf8" /> },
-          { label: 'Premiums',       value: poolStats?.premiumsCollected || '0.02 ETH',  icon: <LuClipboardList size={22} color="#38bdf8" /> },
-        ].map((s, i) => (
-          <div key={i} style={{ ...cardStyle, padding: 14, textAlign: 'center' }}>
-            <div style={{ marginBottom: 6, display: 'flex', justifyContent: 'center' }}>{s.icon}</div>
-            <div style={{ fontSize: 16, fontWeight: 800, fontFamily: fonts.heading, color: '#38bdf8' }}>{s.value}</div>
-            <div style={{ fontSize: 9, color: '#64748b', marginTop: 3, textTransform: 'uppercase', letterSpacing: '1px' }}>{s.label}</div>
-          </div>
-        ))}
-      </div>
-
       {/* Flow diagram */}
-      <div style={{ ...cardStyle, gridColumn: '1 / -1', padding: 24 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 20, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8 }}><LuLink size={16} /> Smart Contract Payout Flow</div>
+      <div style={{ ...cardStyle, gridColumn: '1 / -1', padding: 20 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8 }}><LuLink size={16} /> Smart Contract Payout Flow</div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
           {FLOW_STEPS.map((s, i) => (
             <React.Fragment key={i}>
-              <div style={{
-                textAlign: 'center', flex: 1, padding: 16, borderRadius: 12,
-                background: `${s.color}08`, border: `1px solid ${s.color}25`,
-              }}>
-                <div style={{ marginBottom: 6, display: 'flex', justifyContent: 'center', color: s.color }}>{s.icon}</div>
+              <div style={{ textAlign: 'center', flex: 1, padding: 14, borderRadius: 12, background: `${s.color}08`, border: `1px solid ${s.color}25` }}>
+                <div style={{ marginBottom: 4, display: 'flex', justifyContent: 'center', color: s.color }}>{s.icon}</div>
                 <div style={{ fontSize: 11, fontWeight: 700, color: s.color }}>{s.title}</div>
-                <div style={{ fontSize: 9, color: '#64748b', marginTop: 3 }}>{s.desc}</div>
+                <div style={{ fontSize: 9, color: '#64748b', marginTop: 2 }}>{s.desc}</div>
               </div>
-              {i < FLOW_STEPS.length - 1 && (
-                <div style={{ color: '#334155', fontSize: 20, fontFamily: fonts.heading, flexShrink: 0 }}>→</div>
-              )}
+              {i < FLOW_STEPS.length - 1 && <div style={{ color: '#334155', fontSize: 18 }}>→</div>}
             </React.Fragment>
           ))}
         </div>
       </div>
 
-      {/* Oracle Trigger — judges can trigger live! */}
-      <div style={{ ...cardStyle, gridColumn: '1 / -1', padding: 20 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: '#e2e8f0' }}>
-          <LuZap size={16} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Trigger Oracle Event
-        </div>
-        <div style={{ fontSize: 11, color: '#64748b', marginBottom: 16 }}>
-          Simulate Chainlink oracle pushing NOAA data on-chain → auto-payout
-        </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <select
-            value={triggerLocation}
-            onChange={e => setTriggerLocation(e.target.value)}
-            style={{
-              padding: '10px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)',
-              background: 'rgba(255,255,255,0.05)', color: '#e2e8f0', fontSize: 13,
-              fontFamily: fonts.body, cursor: 'pointer', outline: 'none',
-            }}
-          >
-            {LOCATIONS.map(loc => (
-              <option key={loc} value={loc} style={{ background: '#1e293b' }}>
-                {loc.charAt(0).toUpperCase() + loc.slice(1).replace('_', ' ')}
-              </option>
-            ))}
+      {/* Register Operator */}
+      <div style={{ ...cardStyle, padding: 20 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8 }}><FaMask size={16} /> Register Dive Operator</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <input style={inputStyle} placeholder="Operator Name (e.g. Chandana Dive Center)" value={name} onChange={e => setName(e.target.value)} />
+          <select style={{ ...inputStyle, cursor: 'pointer' }} value={location} onChange={e => setLocation(e.target.value)}>
+            {LOCATIONS.map(l => <option key={l} value={l} style={{ background: '#1e293b' }}>{l.charAt(0).toUpperCase() + l.slice(1).replace('_', ' ')}</option>)}
           </select>
-
-          <button
-            onClick={handleTrigger}
-            disabled={triggering}
-            style={{
-              padding: '10px 24px', borderRadius: 10, border: 'none', cursor: 'pointer',
-              background: triggering ? '#1e293b' : 'linear-gradient(135deg, #f59e0b, #ef4444)',
-              color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: fonts.body,
-              transition: 'all 0.3s', opacity: triggering ? 0.6 : 1,
-              boxShadow: triggering ? 'none' : '0 4px 16px rgba(239,68,68,0.3)',
-            }}
-          >
-            {triggering ? (<><LuLoader size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />Triggering...</>) : (<><LuZap size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />Trigger Bleaching Event</>)}
+          <input style={inputStyle} placeholder="Wallet Address (optional)" value={wallet} onChange={e => setWallet(e.target.value)} />
+          <button style={btnStyle('#3b82f6')} onClick={handleRegister} disabled={loading}>
+            {loading ? 'Registering...' : '+ Register Operator'}
           </button>
+        </div>
+        {msg && <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 6, background: msg.includes('fail') ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)', color: msg.includes('fail') ? '#ef4444' : '#10b981', fontSize: 12 }}>{msg}</div>}
+      </div>
+
+      {/* Trigger Payout */}
+      <div style={{ ...cardStyle, padding: 20 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8 }}><LuZap size={16} /> Trigger Bleaching Payout</div>
+        <div style={{ fontSize: 11, color: '#64748b', marginBottom: 12 }}>
+          Simulate oracle reporting DHW threshold crossed → auto-pay all operators at location
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <select style={{ ...inputStyle, flex: 1 }} value={payoutLoc} onChange={e => setPayoutLoc(e.target.value)}>
+            {LOCATIONS.map(l => <option key={l} value={l} style={{ background: '#1e293b' }}>{l.charAt(0).toUpperCase() + l.slice(1).replace('_', ' ')}</option>)}
+          </select>
+          <button style={btnStyle('linear-gradient(135deg, #f59e0b, #ef4444)')} onClick={handlePayout} disabled={loading}>
+            <LuZap size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Trigger
+          </button>
+        </div>
+
+        {/* Stats summary */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 16 }}>
+          <div style={{ padding: 10, borderRadius: 8, background: 'rgba(56,189,248,0.05)', border: '1px solid rgba(56,189,248,0.15)', textAlign: 'center' }}>
+            <div style={{ fontSize: 20, fontWeight: 800, color: '#38bdf8', fontFamily: fonts.heading }}>{operators.length}</div>
+            <div style={{ fontSize: 9, color: '#64748b', textTransform: 'uppercase' }}>Operators</div>
+          </div>
+          <div style={{ padding: 10, borderRadius: 8, background: 'rgba(16,185,129,0.05)', border: '1px solid rgba(16,185,129,0.15)', textAlign: 'center' }}>
+            <div style={{ fontSize: 20, fontWeight: 800, color: '#10b981', fontFamily: fonts.heading }}>{events.length}</div>
+            <div style={{ fontSize: 9, color: '#64748b', textTransform: 'uppercase' }}>Payouts</div>
+          </div>
         </div>
       </div>
 
-      {/* Payout Events List — updates dynamically */}
+      {/* Registered Operators List */}
       <div style={{ ...cardStyle, gridColumn: '1 / -1', padding: 20 }}>
         <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <LuCircleCheck size={16} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Payout Events
-          <span style={{ fontSize: 10, color: '#64748b', fontWeight: 400 }}>
-            ({events.length} event{events.length !== 1 ? 's' : ''} triggered)
-          </span>
+          <LuClipboardList size={16} /> Registered Operators
+          <span style={{ fontSize: 11, color: '#64748b', fontWeight: 400 }}>({operators.length} total)</span>
+        </div>
+
+        {operators.length === 0 && (
+          <div style={{ color: '#475569', fontSize: 12, textAlign: 'center', padding: 20 }}>
+            No operators registered yet. Use the form above to register.
+          </div>
+        )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {operators.map(op => (
+            <div key={op.id} style={{
+              display: 'grid', gridTemplateColumns: '2fr 1.5fr 1fr 1fr auto', gap: 12, alignItems: 'center',
+              padding: '12px 14px', borderRadius: 10,
+              background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', fontSize: 12,
+            }}>
+              <div>
+                <div style={{ fontWeight: 700, color: '#e2e8f0' }}>{op.name}</div>
+                <div style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>ID: {op.id}</div>
+              </div>
+              <div>
+                <div style={{ color: '#38bdf8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}><LuMapPin size={12} /> {op.location}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: '#64748b' }}>Premium</div>
+                <div style={{ color: '#f59e0b', fontWeight: 600 }}>{op.premium_paid} ETH</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: '#64748b' }}>Payouts</div>
+                <div style={{ color: '#10b981', fontWeight: 600 }}>{op.total_payouts.toFixed(2)} ETH</div>
+              </div>
+              <button onClick={() => handleDelete(op.id, op.name)} style={{
+                padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.3)',
+                background: 'rgba(239,68,68,0.1)', color: '#ef4444', fontSize: 10, cursor: 'pointer',
+              }}><LuX size={12} /></button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Payout Events */}
+      <div style={{ ...cardStyle, gridColumn: '1 / -1', padding: 20 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <LuCircleCheck size={16} /> Payout Events
+          <span style={{ fontSize: 11, color: '#64748b', fontWeight: 400 }}>({events.length} events)</span>
         </div>
 
         {events.length === 0 && (
           <div style={{ color: '#475569', fontSize: 12, textAlign: 'center', padding: 20 }}>
-            No events yet. Click "Trigger Bleaching Event" above to simulate an oracle payout.
+            No payout events yet. Register operators, then trigger a bleaching event.
           </div>
         )}
 
         {events.map((evt, i) => (
-          <div key={i} style={{
-            display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, fontSize: 11,
-            padding: 14, borderRadius: 10, marginBottom: 8,
-            background: 'rgba(16,185,129,0.04)', border: '1px solid rgba(16,185,129,0.15)',
-            animation: i === 0 ? 'fadeIn 0.5s ease' : 'none',
+          <div key={evt.id || i} style={{
+            display: 'grid', gridTemplateColumns: '2fr 1.5fr 1fr 1fr 1fr', gap: 10, fontSize: 11,
+            padding: '10px 12px', borderRadius: 8, marginBottom: 6,
+            background: 'rgba(16,185,129,0.04)', border: '1px solid rgba(16,185,129,0.12)',
           }}>
-            <div><span style={{ color: '#64748b' }}>Operator</span><br /><b style={{ color: '#e2e8f0' }}>{evt.operator}</b></div>
-            <div><span style={{ color: '#64748b' }}>Location</span><br /><b style={{ color: '#e2e8f0' }}>{evt.location}</b></div>
-            <div><span style={{ color: '#64748b' }}>DHW / SST</span><br /><b style={{ color: '#ef4444' }}>{evt.dhw} °C-wk / {evt.sst}°C</b></div>
-            <div><span style={{ color: '#64748b' }}>Payout</span><br /><b style={{ color: '#10b981' }}>{evt.shouldPayout ? evt.payout + ' ✓' : 'No payout'}</b></div>
-            <div><span style={{ color: '#64748b' }}>Time</span><br /><b style={{ color: '#94a3b8' }}>{evt.timestamp}</b></div>
+            <div><span style={{ color: '#64748b' }}>Operator</span><br /><b style={{ color: '#e2e8f0' }}>{evt.operator_name}</b></div>
+            <div><span style={{ color: '#64748b' }}>Location</span><br /><b style={{ color: '#38bdf8' }}>{evt.location}</b></div>
+            <div><span style={{ color: '#64748b' }}>DHW</span><br /><b style={{ color: '#ef4444' }}>{evt.dhw_value} °C-wk</b></div>
+            <div><span style={{ color: '#64748b' }}>Payout</span><br /><b style={{ color: '#10b981' }}>{evt.payout_amount} ETH</b></div>
+            <div><span style={{ color: '#64748b' }}>TX</span><br /><span style={{ color: '#8b5cf6', fontSize: 9, wordBreak: 'break-all' }}>{evt.tx_hash?.slice(0, 14)}...</span></div>
           </div>
         ))}
       </div>
@@ -181,24 +211,18 @@ export default function ContractTab() {
       <div style={{ ...cardStyle, gridColumn: '1 / -1', padding: 18 }}>
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8 }}><LuClipboardList size={16} /> Contract Details</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, fontSize: 11 }}>
-          <div style={{ padding: 10, borderRadius: 8, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <div style={{ color: '#64748b', fontSize: 9, textTransform: 'uppercase', letterSpacing: '1px' }}>Network</div>
-            <div style={{ fontWeight: 700, color: '#8b5cf6', marginTop: 4 }}>Polygon (Remix VM)</div>
-          </div>
-          <div style={{ padding: 10, borderRadius: 8, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <div style={{ color: '#64748b', fontSize: 9, textTransform: 'uppercase', letterSpacing: '1px' }}>DHW Threshold</div>
-            <div style={{ fontWeight: 700, color: '#f59e0b', marginTop: 4 }}>4.0 °C-weeks</div>
-          </div>
-          <div style={{ padding: 10, borderRadius: 8, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <div style={{ color: '#64748b', fontSize: 9, textTransform: 'uppercase', letterSpacing: '1px' }}>AI Model Accuracy</div>
-            <div style={{ fontWeight: 700, color: '#10b981', marginTop: 4 }}>{poolStats?.modelAccuracy || '89.87%'}</div>
-          </div>
+          {[
+            ['Network', 'Polygon Amoy Testnet', '#8b5cf6'],
+            ['DHW Threshold', '4.0 °C-weeks', '#f59e0b'],
+            ['AI Model Accuracy', '89.87%', '#10b981'],
+          ].map(([label, value, color]) => (
+            <div key={label} style={{ padding: 10, borderRadius: 8, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div style={{ color: '#64748b', fontSize: 9, textTransform: 'uppercase', letterSpacing: '1px' }}>{label}</div>
+              <div style={{ fontWeight: 700, color, marginTop: 4 }}>{value}</div>
+            </div>
+          ))}
         </div>
       </div>
-
-      <style>{`
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-      `}</style>
     </div>
   );
 }
