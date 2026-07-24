@@ -45,7 +45,7 @@ Sri Lankan reefs    event on-chain          wallet. No claim.
 | Name | Role | University |
 |------|------|-----------|
 | Senumi | AI Model + Backend + Frontend | NSBM Green University |
-| [Teammate] | Smart Contract + Deployment | NSBM Green University |
+| Chamodi | Smart Contract + Deployment | NSBM Green University |
 
 **Selected Domain:** Tourism, Culture & Inclusive Experiences
 
